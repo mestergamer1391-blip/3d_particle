@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Particle Message</title>
+<style>
+  :root{
+    --accent: #a855f7;
+    --accent-rgb: 168,85,247;
+  }
+  *{box-sizing:border-box; margin:0; padding:0;}
+  html,body{
+    width:100%; height:100%; overflow:hidden;
+    background: radial-gradient(ellipse at center, #0d0616 0%, #050208 70%, #020103 100%);
+    font-family: 'Segoe UI', Tahoma, sans-serif;
+  }
+  canvas{ position:fixed; top:0; left:0; width:100%; height:100%; }
+  #bgCanvas{ z-index:1; }
+  #particleCanvas{ z-index:2; }
+
+  #bgLayer{
+    position:fixed; inset:0; z-index:1; overflow:hidden; pointer-events:none;
+  }
+  .bg-char{
+    position:absolute;
+    color:#fff;
+    font-family:'Consolas', monospace;
+    font-weight:600;
+    opacity:0.06;
+    user-select:none;
+    transition: opacity 1.8s ease, transform 1.8s ease;
+    will-change: opacity, transform;
+  }
+
+  .input-wrap{
+    position:fixed;
+    bottom:60px;
+    left:50%;
+    transform: translateX(-50%) translateY(0px);
+    display:flex;
+    gap:14px;
+    z-index:5;
+    animation: floatWrap 3.4s ease-in-out infinite alternate;
+  }
+  @keyframes floatWrap{
+    0%   { transform: translateX(-50%) translateY(0px); }
+    100% { transform: translateX(-50%) translateY(-9px); }
+  }
+
+  .text-box{
+    width:340px;
+    height:54px;
+    border-radius:999px;
+    border:1px solid rgba(var(--accent-rgb),0.55);
+    background: rgba(20,10,32,0.55);
+    backdrop-filter: blur(10px);
+    color:#fff;
+    padding:0 24px;
+    font-size:15px;
+    outline:none;
+    transition: box-shadow 0.5s ease, border-color 0.5s ease, transform 0.4s ease;
+    box-shadow: 0 0 0px 0px rgba(var(--accent-rgb),0);
+  }
+  .text-box::placeholder{ color: rgba(255,255,255,0.35); }
+  .text-box:hover, .text-box:focus{
+    box-shadow: 0 0 26px 6px rgba(var(--accent-rgb),0.55), 0 0 60px 14px rgba(var(--accent-rgb),0.18);
+    border-color: rgba(var(--accent-rgb),0.9);
+  }
+
+  .send-btn{
+    width:100px;
+    height:54px;
+    border-radius:999px;
+    border:none;
+    cursor:pointer;
+    color:#fff;
+    font-size:15px;
+    letter-spacing:1px;
+    background: linear-gradient(135deg, var(--accent), #6d28d9);
+    transition: box-shadow 0.5s ease, transform 0.25s ease;
+    box-shadow: 0 0 0px 0px rgba(var(--accent-rgb),0);
+  }
+  .send-btn:hover{
+    box-shadow: 0 0 30px 8px rgba(var(--accent-rgb),0.65), 0 0 70px 18px rgba(var(--accent-rgb),0.25);
+    transform: translateY(-2px);
+  }
+  .send-btn:active{ transform: translateY(0px) scale(0.96); }
+
+  .clear-btn{
+    position:fixed;
+    top:26px;
+    right:30px;
+    z-index:6;
+    background:transparent;
+    border:1px solid rgba(255,255,255,0.25);
+    color:#fff;
+    opacity:0.35;
+    padding:8px 20px;
+    border-radius:999px;
+    font-size:13px;
+    letter-spacing:1px;
+    cursor:pointer;
+    transition: opacity 0.5s ease, transform 0.5s cubic-bezier(.22,1,.36,1), box-shadow 0.5s ease;
+  }
+  .clear-btn:hover{
+    opacity:0.9;
+    box-shadow: 0 0 20px 4px rgba(255,255,255,0.15);
+  }
+  .clear-btn:active{ transform: scale(0.9) rotate(-4deg); }
+
+  .color-picker-wrap{
+    position:fixed;
+    right:26px;
+    top:50%;
+    transform: translateY(-50%);
+    z-index:6;
+    display:flex;
+    flex-direction:column;
+    align-items:center;
+    gap:6px;
+  }
+  .color-picker-wrap span{
+    color:rgba(255,255,255,0.4);
+    font-size:11px;
+    writing-mode: vertical-rl;
+  }
+  #colorPicker{
+    -webkit-appearance:none;
+    appearance:none;
+    width:34px; height:34px;
+    border-radius:50%;
+    border:2px solid rgba(255,255,255,0.4);
+    background:none;
+    cursor:pointer;
+    padding:0;
+    overflow:hidden;
+    transition: box-shadow 0.4s ease, transform 0.3s ease;
+    box-shadow: 0 0 14px 3px rgba(var(--accent-rgb),0.5);
+  }
+  #colorPicker:hover{ transform: scale(1.12); }
+  #colorPicker::-webkit-color-swatch-wrapper{ padding:0; }
+  #colorPicker::-webkit-color-swatch{ border:none; border-radius:50%; }
+</style>
+</head>
+<body>
+
+<div id="bgLayer"></div>
+<canvas id="particleCanvas"></canvas>
+
+<div class="input-wrap">
+  <input id="textInput" class="text-box" type="text" placeholder="متن خود را بنویس..." maxlength="40">
+  <button id="sendBtn" class="send-btn">send</button>
+</div>
+
+<button id="clearBtn" class="clear-btn">clear</button>
+
+<div class="color-picker-wrap">
+  <span>رنگ</span>
+  <input type="color" id="colorPicker" value="#a855f7">
+</div>
+
+<script>
+/* ---------- پس‌زمینه کاراکترهای کیبورد ---------- */
+const bgLayer = document.getElementById('bgLayer');
+const symbols = ['A','S','D','F','Enter','Shift','Ctrl','@','#','$','%','&','*','?','/','~','Tab','Esc','1','0','Alt','Space','<','>','{','}','[',']'];
+const bgChars = [];
+const BG_COUNT = 60;
+
+function randSymbol(){ return symbols[Math.floor(Math.random()*symbols.length)]; }
+
+for(let i=0;i<BG_COUNT;i++){
+  const el = document.createElement('div');
+  el.className = 'bg-char';
+  el.textContent = randSymbol();
+  const size = 14 + Math.random()*26;
+  el.style.fontSize = size+'px';
+  el.style.left = Math.random()*100+'%';
+  el.style.top = Math.random()*100+'%';
+  el.style.opacity = (0.03 + Math.random()*0.08).toFixed(2);
+  bgLayer.appendChild(el);
+  bgChars.push(el);
+}
+
+function cycleBgChars(){
+  bgChars.forEach(el=>{
+    if(Math.random() < 0.5){
+      el.style.opacity = 0;
+      setTimeout(()=>{
+        el.textContent = randSymbol();
+        el.style.left = Math.random()*100+'%';
+        el.style.top = Math.random()*100+'%';
+        el.style.opacity = (0.03 + Math.random()*0.09).toFixed(2);
+      }, 900);
+    }
+  });
+}
+setInterval(cycleBgChars, 1800);
+
+/* ---------- سیستم ذرات ---------- */
+const canvas = document.getElementById('particleCanvas');
+const ctx = canvas.getContext('2d');
+let W, H;
+function resize(){
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+let accentColor = { r:168, g:85, b:247 };
+function hexToRgb(hex){
+  const m = hex.replace('#','');
+  return {
+    r: parseInt(m.substring(0,2),16),
+    g: parseInt(m.substring(2,4),16),
+    b: parseInt(m.substring(4,6),16)
+  };
+}
+
+const colorPicker = document.getElementById('colorPicker');
+colorPicker.addEventListener('input', e=>{
+  accentColor = hexToRgb(e.target.value);
+  document.documentElement.style.setProperty('--accent', e.target.value);
+  document.documentElement.style.setProperty('--accent-rgb', `${accentColor.r},${accentColor.g},${accentColor.b}`);
+});
+
+const PARTICLE_COUNT = 260;
+let particles = [];
+let mode = 'float'; // 'float' | 'text'
+
+function centralRegion(){
+  return {
+    x: W/2,
+    y: H/2 - 40,
+    w: Math.min(560, W*0.5),
+    h: Math.min(360, H*0.35)
+  };
+}
+
+class Particle{
+  constructor(){
+    this.reset();
+    this.size = 1 + Math.random()*1.8;
+    this.phase = Math.random()*Math.PI*2;
+    this.speed = 0.4 + Math.random()*0.6;
+    this.twinkle = Math.random()*Math.PI*2;
+  }
+  reset(){
+    const r = centralRegion();
+    this.baseX = r.x + (Math.random()-0.5)*r.w;
+    this.baseY = r.y + (Math.random()-0.5)*r.h;
+    this.x = this.baseX;
+    this.y = this.baseY;
+    this.tx = this.baseX;
+    this.ty = this.baseY;
+  }
+  setTarget(x,y){
+    this.tx = x;
+    this.ty = y;
+  }
+  update(t){
+    if(mode === 'float'){
+      this.x += (this.baseX + Math.sin(t*0.0007*this.speed + this.phase)*18 - this.x) * 0.03;
+      this.y += (this.baseY + Math.cos(t*0.0006*this.speed + this.phase)*18 - this.y) * 0.03;
+    } else {
+      const jitterX = Math.sin(t*0.004 + this.phase)*0.4;
+      const jitterY = Math.cos(t*0.004 + this.phase)*0.4;
+      this.x += (this.tx + jitterX - this.x) * 0.07;
+      this.y += (this.ty + jitterY - this.y) * 0.07;
+    }
+    this.twinkle += 0.03;
+  }
+  draw(){
+    const alpha = 0.55 + Math.sin(this.twinkle)*0.35;
+    const {r,g,b} = accentColor;
+    ctx.save();
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = `rgba(${r},${g},${b},0.9)`;
+    ctx.fillStyle = `rgba(${r},${g},${b},${Math.max(0.15,alpha)})`;
+    ctx.beginPath();
+    ctx.arc(this.x, this.y, this.size, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+}
+
+for(let i=0;i<PARTICLE_COUNT;i++) particles.push(new Particle());
+
+function animate(t){
+  ctx.clearRect(0,0,W,H);
+  particles.forEach(p=>{ p.update(t); p.draw(); });
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+/* ---------- تبدیل متن به نقاط ---------- */
+function textToPoints(text){
+  const off = document.createElement('canvas');
+  off.width = W; off.height = H;
+  const octx = off.getContext('2d');
+  const fontSize = Math.max(26, Math.min(80, 620/Math.max(text.length,1)));
+  octx.font = `bold ${fontSize}px 'Segoe UI', sans-serif`;
+  octx.fillStyle = '#fff';
+  octx.textAlign = 'center';
+  octx.textBaseline = 'middle';
+  octx.fillText(text, W/2, H/2 - 40);
+  const data = octx.getImageData(0,0,W,H).data;
+  const points = [];
+  const step = 4;
+  for(let y=0; y<H; y+=step){
+    for(let x=0; x<W; x+=step){
+      const idx = (y*W + x) * 4;
+      if(data[idx+3] > 120) points.push({x,y});
+    }
+  }
+  for(let i=points.length-1;i>0;i--){
+    const j = Math.floor(Math.random()*(i+1));
+    [points[i],points[j]] = [points[j],points[i]];
+  }
+  return points;
+}
+
+/* ---------- رویدادها ---------- */
+const sendBtn = document.getElementById('sendBtn');
+const clearBtn = document.getElementById('clearBtn');
+const textInput = document.getElementById('textInput');
+
+function formText(){
+  const text = textInput.value.trim();
+  if(!text) return;
+  const points = textToPoints(text);
+  if(points.length === 0) return;
+  mode = 'text';
+  particles.forEach((p,i)=>{
+    const pt = points[i % points.length];
+    const jx = (Math.random()-0.5)*3;
+    const jy = (Math.random()-0.5)*3;
+    p.setTarget(pt.x + jx, pt.y + jy);
+  });
+}
+
+function clearText(){
+  mode = 'float';
+  particles.forEach(p=>{
+    p.reset();
+  });
+  textInput.value = '';
+}
+
+sendBtn.addEventListener('click', formText);
+textInput.addEventListener('keydown', e=>{ if(e.key === 'Enter') formText(); });
+clearBtn.addEventListener('click', clearText);
+</script>
+</body>
+</html>
